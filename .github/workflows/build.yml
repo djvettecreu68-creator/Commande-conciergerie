@@ -1,0 +1,514 @@
+name: Construire l'APK Conciergerie
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Générer le projet Android
+        run: |
+          mkdir -p "$(dirname "settings.gradle")"
+          cat > 'settings.gradle' <<'CC_EOF_0'
+          pluginManagement { repositories { google(); mavenCentral(); gradlePluginPortal() } }
+          dependencyResolutionManagement { repositories { google(); mavenCentral() } }
+          rootProject.name = "Conciergerie"
+          include ':app'
+          CC_EOF_0
+          mkdir -p "$(dirname "build.gradle")"
+          cat > 'build.gradle' <<'CC_EOF_1'
+          plugins { id 'com.android.application' version '8.5.2' apply false }
+          CC_EOF_1
+          mkdir -p "$(dirname "gradle.properties")"
+          cat > 'gradle.properties' <<'CC_EOF_2'
+          org.gradle.jvmargs=-Xmx2g
+          android.useAndroidX=false
+          CC_EOF_2
+          mkdir -p "$(dirname "app/build.gradle")"
+          cat > 'app/build.gradle' <<'CC_EOF_3'
+          plugins { id 'com.android.application' }
+
+          def numero = (System.getenv('GITHUB_RUN_NUMBER') ?: '1') as int
+
+          android {
+              namespace 'fr.hack68.conciergerie'
+              compileSdk 34
+              defaultConfig {
+                  applicationId 'fr.hack68.conciergerie'
+                  minSdk 26
+                  targetSdk 34
+                  versionCode numero
+                  versionName "1.${numero}"
+              }
+              signingConfigs {
+                  cle {
+                      storeFile file('conciergerie.keystore')
+                      storePassword 'conciergerie'
+                      keyAlias 'conciergerie'
+                      keyPassword 'conciergerie'
+                  }
+              }
+              buildTypes {
+                  debug { signingConfig signingConfigs.cle }
+                  release { signingConfig signingConfigs.cle; minifyEnabled false }
+              }
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          CC_EOF_3
+          mkdir -p "$(dirname "app/src/main/AndroidManifest.xml")"
+          cat > 'app/src/main/AndroidManifest.xml' <<'CC_EOF_4'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+              <uses-permission android:name="android.permission.INTERNET" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+              <application
+                  android:label="Conciergerie"
+                  android:icon="@mipmap/ic_launcher"
+                  android:allowBackup="true"
+                  android:theme="@android:style/Theme.Material.Light.NoActionBar">
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true"
+                      android:launchMode="singleTask"
+                      android:configChanges="orientation|screenSize|keyboardHidden|uiMode">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+                  <service
+                      android:name=".Ecoute"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="Alerte la conciergerie des nouvelles commandes" />
+                  </service>
+                  <receiver android:name=".MajRetour" android:exported="false" />
+                  <receiver android:name=".Demarrage" android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                      </intent-filter>
+                  </receiver>
+              </application>
+          </manifest>
+          CC_EOF_4
+          mkdir -p "$(dirname "app/src/main/res/values/colors.xml")"
+          cat > 'app/src/main/res/values/colors.xml' <<'CC_EOF_5'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="fond_icone">#0B6E70</color>
+          </resources>
+          CC_EOF_5
+          mkdir -p "$(dirname "app/src/main/res/drawable/ic_avant.xml")"
+          cat > 'app/src/main/res/drawable/ic_avant.xml' <<'CC_EOF_6'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp" android:height="108dp"
+              android:viewportWidth="108" android:viewportHeight="108">
+              <path android:fillColor="#FFE0A3" android:pathData="M34,52 C34,40 44,34 54,34 C64,34 74,40 74,52 Z" />
+              <path android:fillColor="#7BD389" android:pathData="M32,54 L76,54 L76,58 Q71,62 65,58 Q59,62 54,58 Q49,62 43,58 Q37,62 32,58 Z" />
+              <path android:fillColor="#E8735A" android:pathData="M34,61 L74,61 L74,65 L34,65 Z" />
+              <path android:fillColor="#FFE0A3" android:pathData="M34,67 L74,67 L74,70 Q74,74 70,74 L38,74 Q34,74 34,70 Z" />
+          </vector>
+          CC_EOF_6
+          mkdir -p "$(dirname "app/src/main/res/drawable/ic_notif.xml")"
+          cat > 'app/src/main/res/drawable/ic_notif.xml' <<'CC_EOF_7'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp" android:height="24dp"
+              android:viewportWidth="24" android:viewportHeight="24">
+              <path android:fillColor="#FFFFFFFF" android:pathData="M3,11 C3,6 7,3 12,3 C17,3 21,6 21,11 Z M2,13 L22,13 L22,15 L2,15 Z M3,17 L21,17 L21,19 Q21,21 19,21 L5,21 Q3,21 3,19 Z" />
+          </vector>
+          CC_EOF_7
+          mkdir -p "$(dirname "app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml")"
+          cat > 'app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml' <<'CC_EOF_8'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/fond_icone" />
+              <foreground android:drawable="@drawable/ic_avant" />
+          </adaptive-icon>
+          CC_EOF_8
+          mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/Demarrage.java")"
+          cat > 'app/src/main/java/fr/hack68/conciergerie/Demarrage.java' <<'CC_EOF_9'
+          package fr.hack68.conciergerie;
+
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+
+          /** Après un redémarrage du téléphone, la Conciergerie reste à l’écoute des commandes. */
+          public class Demarrage extends BroadcastReceiver {
+              @Override
+              public void onReceive(Context c, Intent i) {
+                  if (Intent.ACTION_BOOT_COMPLETED.equals(i.getAction())
+                          && c.getSharedPreferences("conc", Context.MODE_PRIVATE).getString("jeton", null) != null) {
+                      try { c.startForegroundService(new Intent(c, Ecoute.class)); } catch (Exception ignore) { }
+                  }
+              }
+          }
+          CC_EOF_9
+          mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/Ecoute.java")"
+          cat > 'app/src/main/java/fr/hack68/conciergerie/Ecoute.java' <<'CC_EOF_10'
+          package fr.hack68.conciergerie;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.app.Service;
+          import android.content.Intent;
+          import android.content.pm.ServiceInfo;
+          import android.os.Build;
+          import android.os.IBinder;
+          import java.io.ByteArrayOutputStream;
+          import java.io.IOException;
+          import java.io.InputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import org.json.JSONObject;
+
+          /** Côté Conciergerie : regarde toutes les 20 s s’il y a une nouvelle commande et sonne. */
+          public class Ecoute extends Service {
+              static final String FOND = "fond", CMD = "commandes";
+              volatile boolean actif;
+              Thread fil;
+
+              @Override
+              public IBinder onBind(Intent i) { return null; }
+
+              @Override
+              public int onStartCommand(Intent i, int flags, int id) {
+                  NotificationManager nm = getSystemService(NotificationManager.class);
+                  nm.createNotificationChannel(new NotificationChannel(FOND, "Écoute des commandes", NotificationManager.IMPORTANCE_MIN));
+                  NotificationChannel ch = new NotificationChannel(CMD, "Nouvelles commandes", NotificationManager.IMPORTANCE_HIGH);
+                  ch.enableVibration(true);
+                  nm.createNotificationChannel(ch);
+                  Notification n = new Notification.Builder(this, FOND)
+                          .setSmallIcon(R.drawable.ic_notif)
+                          .setContentTitle("Conciergerie")
+                          .setContentText("À l’écoute des nouvelles commandes")
+                          .setContentIntent(ouvrir())
+                          .setOngoing(true)
+                          .build();
+                  if (Build.VERSION.SDK_INT >= 34) startForeground(1, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+                  else startForeground(1, n);
+                  if (fil == null || !fil.isAlive()) {
+                      actif = true;
+                      fil = new Thread(this::boucle);
+                      fil.start();
+                  }
+                  return START_STICKY;
+              }
+
+              PendingIntent ouvrir() {
+                  Intent i = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                  return PendingIntent.getActivity(this, 0, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+              }
+
+              void boucle() {
+                  long vu = -1;
+                  int num = 10;
+                  while (actif) {
+                      String jeton = getSharedPreferences("conc", MODE_PRIVATE).getString("jeton", null);
+                      if (jeton == null) break;
+                      try {
+                          HttpURLConnection c = (HttpURLConnection) new URL(MainActivity.BASE + "/api/dernier").openConnection();
+                          c.setRequestProperty("X-Jeton", jeton);
+                          c.setConnectTimeout(10000);
+                          c.setReadTimeout(10000);
+                          int code = c.getResponseCode();
+                          if (code == 401 || code == 403) {
+                              getSharedPreferences("conc", MODE_PRIVATE).edit().remove("jeton").apply();
+                              break;
+                          }
+                          if (code == 200) {
+                              JSONObject d = new JSONObject(lire(c.getInputStream()));
+                              long t = d.optLong("t");
+                              String txt = d.optString("txt");
+                              if (vu >= 0 && t != vu && !txt.isEmpty()) notifier(num++, txt);
+                              vu = t;
+                          }
+                          c.disconnect();
+                      } catch (Exception ignore) { }
+                      try { Thread.sleep(20000); } catch (InterruptedException e) { break; }
+                  }
+                  stopSelf();
+              }
+
+              void notifier(int id, String txt) {
+                  Notification n = new Notification.Builder(this, CMD)
+                          .setSmallIcon(R.drawable.ic_notif)
+                          .setContentTitle("🥪 Nouvelle commande")
+                          .setContentText(txt)
+                          .setContentIntent(ouvrir())
+                          .setAutoCancel(true)
+                          .build();
+                  getSystemService(NotificationManager.class).notify(id, n);
+              }
+
+              @Override
+              public void onDestroy() {
+                  actif = false;
+                  if (fil != null) fil.interrupt();
+                  super.onDestroy();
+              }
+
+              static String lire(InputStream in) throws IOException {
+                  ByteArrayOutputStream b = new ByteArrayOutputStream();
+                  byte[] x = new byte[4096];
+                  int n;
+                  while ((n = in.read(x)) > 0) b.write(x, 0, n);
+                  in.close();
+                  return b.toString("UTF-8");
+              }
+          }
+          CC_EOF_10
+          mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/MainActivity.java")"
+          cat > 'app/src/main/java/fr/hack68/conciergerie/MainActivity.java' <<'CC_EOF_11'
+          package fr.hack68.conciergerie;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.graphics.Color;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.webkit.JavascriptInterface;
+          import android.webkit.WebChromeClient;
+          import android.webkit.WebResourceError;
+          import android.webkit.WebResourceRequest;
+          import android.webkit.WebSettings;
+          import android.webkit.WebView;
+          import android.webkit.WebViewClient;
+
+          /** L’appli affiche le site du Worker ; le téléphone ajoute les alertes et la mise à jour. */
+          public class MainActivity extends Activity {
+              static final String BASE = "https://commande-conciergerie.djvettecreu68.workers.dev";
+              static MainActivity ici;
+              WebView w;
+
+              static final String HORS_LIGNE = "<html><head><meta name='viewport' content='width=device-width,initial-scale=1'></head>"
+                      + "<body style='font-family:sans-serif;padding:32px;text-align:center'><h2>Pas de connexion</h2>"
+                      + "<p>Vérifie le Wi-Fi ou les données mobiles.</p>"
+                      + "<button style='font-size:18px;padding:14px 24px;border:0;border-radius:12px;background:#0B6E70;color:#fff' "
+                      + "onclick='Android.recharger()'>Réessayer</button></body></html>";
+
+              @Override
+              protected void onCreate(Bundle b) {
+                  super.onCreate(b);
+                  ici = this;
+                  getWindow().setStatusBarColor(Color.parseColor("#0B6E70"));
+                  w = new WebView(this);
+                  setContentView(w);
+                  WebSettings s = w.getSettings();
+                  s.setJavaScriptEnabled(true);
+                  s.setDomStorageEnabled(true);
+                  s.setMediaPlaybackRequiresUserGesture(false);
+                  w.addJavascriptInterface(new Pont(), "Android");
+                  w.setWebChromeClient(new WebChromeClient());
+                  w.setWebViewClient(new WebViewClient() {
+                      @Override
+                      public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
+                          if (r.getUrl().toString().startsWith(BASE)) return false;
+                          try { startActivity(new Intent(Intent.ACTION_VIEW, r.getUrl())); } catch (Exception ignore) { }
+                          return true;
+                      }
+
+                      @Override
+                      public void onReceivedError(WebView v, WebResourceRequest r, WebResourceError e) {
+                          if (r.isForMainFrame()) v.loadDataWithBaseURL(null, HORS_LIGNE, "text/html", "utf-8", null);
+                      }
+                  });
+                  charger();
+              }
+
+              void charger() { w.loadUrl(BASE + "/?app=" + version()); }
+
+              @SuppressWarnings("deprecation")
+              int version() {
+                  try { return getPackageManager().getPackageInfo(getPackageName(), 0).versionCode; }
+                  catch (Exception e) { return 0; }
+              }
+
+              @Override
+              @SuppressWarnings("deprecation")
+              public void onBackPressed() {
+                  if (w != null && w.canGoBack()) w.goBack(); else super.onBackPressed();
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (ici == this) ici = null;
+                  super.onDestroy();
+              }
+
+              /** Exécute du JavaScript dans la page (depuis n’importe quel fil). */
+              static void js(String code) {
+                  MainActivity a = ici;
+                  if (a != null) a.runOnUiThread(() -> { if (a.w != null) a.w.evaluateJavascript(code, null); });
+              }
+
+              class Pont {
+                  @JavascriptInterface
+                  public int version() { return MainActivity.this.version(); }
+
+                  @JavascriptInterface
+                  public void ecoute(String jeton) {
+                      getSharedPreferences("conc", MODE_PRIVATE).edit().putString("jeton", jeton).apply();
+                      runOnUiThread(() -> {
+                          if (Build.VERSION.SDK_INT >= 33
+                                  && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
+                              requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 1);
+                          try { startForegroundService(new Intent(MainActivity.this, Ecoute.class)); } catch (Exception ignore) { }
+                      });
+                  }
+
+                  @JavascriptInterface
+                  public void arret() {
+                      getSharedPreferences("conc", MODE_PRIVATE).edit().remove("jeton").apply();
+                      stopService(new Intent(MainActivity.this, Ecoute.class));
+                  }
+
+                  @JavascriptInterface
+                  public void majApk() { new Thread(() -> Maj.lancer(MainActivity.this)).start(); }
+
+                  @JavascriptInterface
+                  public void recharger() { runOnUiThread(MainActivity.this::charger); }
+              }
+          }
+          CC_EOF_11
+          mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/Maj.java")"
+          cat > 'app/src/main/java/fr/hack68/conciergerie/Maj.java' <<'CC_EOF_12'
+          package fr.hack68.conciergerie;
+
+          import android.app.PendingIntent;
+          import android.content.Intent;
+          import android.content.pm.PackageInstaller;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.provider.Settings;
+          import java.io.File;
+          import java.io.FileInputStream;
+          import java.io.FileOutputStream;
+          import java.io.InputStream;
+          import java.io.OutputStream;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import org.json.JSONObject;
+
+          /** Mise à jour obligatoire : télécharge la nouvelle APK depuis le Worker et l’installe. */
+          public class Maj {
+              static void etat(String t, boolean fini) {
+                  MainActivity.js("majEtat(" + JSONObject.quote(t) + "," + fini + ")");
+              }
+
+              static void lancer(MainActivity a) {
+                  try {
+                      if (!a.getPackageManager().canRequestPackageInstalls()) {
+                          a.runOnUiThread(() -> a.startActivity(new Intent(Settings.ACTION_MANAGE_UNKNOWN_APP_SOURCES,
+                                  Uri.parse("package:" + a.getPackageName()))));
+                          etat("Autorise l’installation pour Conciergerie, reviens ici, puis appuie à nouveau sur « Mettre à jour ».", true);
+                          return;
+                      }
+                      File f = new File(a.getCacheDir(), "maj.apk");
+                      HttpURLConnection c = (HttpURLConnection) new URL(MainActivity.BASE + "/apk").openConnection();
+                      c.setConnectTimeout(15000);
+                      c.setReadTimeout(60000);
+                      if (c.getResponseCode() != 200) throw new Exception("téléchargement impossible (" + c.getResponseCode() + ")");
+                      long total = c.getContentLengthLong(), lu = 0;
+                      int dernier = -1;
+                      try (InputStream in = c.getInputStream(); OutputStream o = new FileOutputStream(f)) {
+                          byte[] b = new byte[65536];
+                          int n;
+                          while ((n = in.read(b)) > 0) {
+                              o.write(b, 0, n);
+                              lu += n;
+                              if (total > 0) {
+                                  int p = (int) (lu * 100 / total);
+                                  if (p / 10 != dernier) { dernier = p / 10; etat("Téléchargement… " + p + " %", false); }
+                              }
+                          }
+                      }
+                      PackageInstaller pi = a.getPackageManager().getPackageInstaller();
+                      int id = pi.createSession(new PackageInstaller.SessionParams(PackageInstaller.SessionParams.MODE_FULL_INSTALL));
+                      try (PackageInstaller.Session s = pi.openSession(id)) {
+                          try (OutputStream o = s.openWrite("maj", 0, f.length()); InputStream in = new FileInputStream(f)) {
+                              byte[] b = new byte[65536];
+                              int n;
+                              while ((n = in.read(b)) > 0) o.write(b, 0, n);
+                              s.fsync(o);
+                          }
+                          int fl = PendingIntent.FLAG_UPDATE_CURRENT | (Build.VERSION.SDK_INT >= 31 ? PendingIntent.FLAG_MUTABLE : 0);
+                          PendingIntent pend = PendingIntent.getBroadcast(a, 7, new Intent(a, MajRetour.class), fl);
+                          s.commit(pend.getIntentSender());
+                      }
+                      etat("Confirme l’installation dans la fenêtre d’Android.", true);
+                  } catch (Exception e) {
+                      etat("Échec : " + e.getMessage(), true);
+                  }
+              }
+          }
+          CC_EOF_12
+          mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/MajRetour.java")"
+          cat > 'app/src/main/java/fr/hack68/conciergerie/MajRetour.java' <<'CC_EOF_13'
+          package fr.hack68.conciergerie;
+
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.pm.PackageInstaller;
+
+          /** Réponse d’Android pendant l’installation de la mise à jour. */
+          public class MajRetour extends BroadcastReceiver {
+              @Override
+              @SuppressWarnings("deprecation")
+              public void onReceive(Context c, Intent i) {
+                  int st = i.getIntExtra(PackageInstaller.EXTRA_STATUS, -999);
+                  if (st == PackageInstaller.STATUS_PENDING_USER_ACTION) {
+                      Intent conf = i.getParcelableExtra(Intent.EXTRA_INTENT);
+                      if (conf != null) {
+                          conf.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK);
+                          c.startActivity(conf);
+                      }
+                  } else if (st != PackageInstaller.STATUS_SUCCESS) {
+                      Maj.etat("Installation non faite : " + i.getStringExtra(PackageInstaller.EXTRA_STATUS_MESSAGE), true);
+                  }
+              }
+          }
+          CC_EOF_13
+          echo "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" | base64 -d > app/conciergerie.keystore
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.7'
+
+      - name: Compiler
+        run: gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Publier l'APK
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          cp app/build/outputs/apk/debug/app-debug.apk Conciergerie.apk
+          gh release create "v${{ github.run_number }}" Conciergerie.apk --title "Conciergerie ${{ github.run_number }}" --notes "Télécharge Conciergerie.apk et installe-le." --latest
