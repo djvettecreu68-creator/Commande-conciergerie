@@ -99,6 +99,14 @@ jobs:
                           android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
                           android:value="Alerte la conciergerie des nouvelles commandes" />
                   </service>
+                  <service
+                      android:name=".Attente"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="Prévient le collègue quand sa commande est prête" />
+                  </service>
                   <receiver android:name=".MajRetour" android:exported="false" />
                   <receiver android:name=".Demarrage" android:exported="true">
                       <intent-filter>
@@ -144,8 +152,121 @@ jobs:
               <foreground android:drawable="@drawable/ic_avant" />
           </adaptive-icon>
           CC_EOF_8
+          mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/Attente.java")"
+          cat > 'app/src/main/java/fr/hack68/conciergerie/Attente.java' <<'CC_EOF_9'
+          package fr.hack68.conciergerie;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.app.Service;
+          import android.content.Intent;
+          import android.content.SharedPreferences;
+          import android.content.pm.ServiceInfo;
+          import android.os.Build;
+          import android.os.IBinder;
+          import java.net.HttpURLConnection;
+          import java.net.URL;
+          import org.json.JSONObject;
+
+          /** Côté collègue : tant qu’une commande est en préparation, regarde toutes les 20 s si elle est prête. */
+          public class Attente extends Service {
+              static final String FOND = "attente_fond", PRETE = "prete";
+              static final long MAX = 12L * 3600 * 1000;
+              volatile boolean actif;
+              volatile int restant;
+              Thread fil;
+
+              @Override
+              public IBinder onBind(Intent i) { return null; }
+
+              SharedPreferences prefs() { return getSharedPreferences("attente", MODE_PRIVATE); }
+
+              @Override
+              public int onStartCommand(Intent i, int flags, int id) {
+                  if (i != null && i.hasExtra("n")) prefs().edit().putInt("n", i.getIntExtra("n", 1)).apply();
+                  restant = prefs().getInt("n", 0);
+                  NotificationManager nm = getSystemService(NotificationManager.class);
+                  nm.createNotificationChannel(new NotificationChannel(FOND, "Commande en préparation", NotificationManager.IMPORTANCE_MIN));
+                  NotificationChannel ch = new NotificationChannel(PRETE, "Commande prête", NotificationManager.IMPORTANCE_HIGH);
+                  ch.enableVibration(true);
+                  nm.createNotificationChannel(ch);
+                  Notification n = new Notification.Builder(this, FOND)
+                          .setSmallIcon(R.drawable.ic_notif)
+                          .setContentTitle("Commande en préparation")
+                          .setContentText("Tu seras prévenu quand elle sera prête.")
+                          .setContentIntent(ouvrir())
+                          .setOngoing(true)
+                          .build();
+                  if (Build.VERSION.SDK_INT >= 34) startForeground(2, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+                  else startForeground(2, n);
+                  if (restant <= 0) { stopSelf(); return START_NOT_STICKY; }
+                  if (fil == null || !fil.isAlive()) {
+                      actif = true;
+                      fil = new Thread(this::boucle);
+                      fil.start();
+                  }
+                  return START_STICKY;
+              }
+
+              PendingIntent ouvrir() {
+                  Intent i = new Intent(this, MainActivity.class).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK | Intent.FLAG_ACTIVITY_SINGLE_TOP);
+                  return PendingIntent.getActivity(this, 1, i, PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+              }
+
+              void boucle() {
+                  long vu = -1, debut = System.currentTimeMillis();
+                  int num = 100;
+                  while (actif && System.currentTimeMillis() - debut < MAX) {
+                      String jeton = prefs().getString("jeton", null);
+                      if (jeton == null) break;
+                      try {
+                          HttpURLConnection c = (HttpURLConnection) new URL(MainActivity.BASE + "/api/mes-validees").openConnection();
+                          c.setRequestProperty("X-Jeton", jeton);
+                          c.setConnectTimeout(10000);
+                          c.setReadTimeout(10000);
+                          int code = c.getResponseCode();
+                          if (code == 401 || code == 403) break;
+                          if (code == 200) {
+                              JSONObject d = new JSONObject(Ecoute.lire(c.getInputStream()));
+                              long n = d.optLong("n");
+                              if (vu >= 0 && n > vu) {
+                                  notifier(num++, d.optString("txt"), d.optBoolean("annule"));
+                                  restant -= (int) (n - vu);
+                                  prefs().edit().putInt("n", Math.max(restant, 0)).apply();
+                                  if (restant <= 0) break;
+                              }
+                              vu = n;
+                          }
+                          c.disconnect();
+                      } catch (Exception ignore) { }
+                      try { Thread.sleep(20000); } catch (InterruptedException e) { break; }
+                  }
+                  stopSelf();
+              }
+
+              void notifier(int id, String txt, boolean annule) {
+                  Notification n = new Notification.Builder(this, PRETE)
+                          .setSmallIcon(R.drawable.ic_notif)
+                          .setContentTitle(annule ? "Commande annulée par la conciergerie" : "✅ Ta commande est prête")
+                          .setContentText(txt)
+                          .setContentIntent(ouvrir())
+                          .setAutoCancel(true)
+                          .build();
+                  getSystemService(NotificationManager.class).notify(id, n);
+              }
+
+              @Override
+              public void onDestroy() {
+                  actif = false;
+                  if (fil != null) fil.interrupt();
+                  super.onDestroy();
+              }
+          }
+          CC_EOF_9
           mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/Demarrage.java")"
-          cat > 'app/src/main/java/fr/hack68/conciergerie/Demarrage.java' <<'CC_EOF_9'
+          cat > 'app/src/main/java/fr/hack68/conciergerie/Demarrage.java' <<'CC_EOF_10'
           package fr.hack68.conciergerie;
 
           import android.content.BroadcastReceiver;
@@ -162,9 +283,9 @@ jobs:
                   }
               }
           }
-          CC_EOF_9
+          CC_EOF_10
           mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/Ecoute.java")"
-          cat > 'app/src/main/java/fr/hack68/conciergerie/Ecoute.java' <<'CC_EOF_10'
+          cat > 'app/src/main/java/fr/hack68/conciergerie/Ecoute.java' <<'CC_EOF_11'
           package fr.hack68.conciergerie;
 
           import android.app.Notification;
@@ -278,9 +399,9 @@ jobs:
                   return b.toString("UTF-8");
               }
           }
-          CC_EOF_10
+          CC_EOF_11
           mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/MainActivity.java")"
-          cat > 'app/src/main/java/fr/hack68/conciergerie/MainActivity.java' <<'CC_EOF_11'
+          cat > 'app/src/main/java/fr/hack68/conciergerie/MainActivity.java' <<'CC_EOF_12'
           package fr.hack68.conciergerie;
 
           import android.app.Activity;
@@ -382,7 +503,20 @@ jobs:
                   @JavascriptInterface
                   public void arret() {
                       getSharedPreferences("conc", MODE_PRIVATE).edit().remove("jeton").apply();
+                      getSharedPreferences("attente", MODE_PRIVATE).edit().clear().apply();
                       stopService(new Intent(MainActivity.this, Ecoute.class));
+                      stopService(new Intent(MainActivity.this, Attente.class));
+                  }
+
+                  @JavascriptInterface
+                  public void attente(String jeton, int n) {
+                      getSharedPreferences("attente", MODE_PRIVATE).edit().putString("jeton", jeton).apply();
+                      runOnUiThread(() -> {
+                          if (Build.VERSION.SDK_INT >= 33
+                                  && checkSelfPermission("android.permission.POST_NOTIFICATIONS") != PackageManager.PERMISSION_GRANTED)
+                              requestPermissions(new String[]{"android.permission.POST_NOTIFICATIONS"}, 2);
+                          try { startForegroundService(new Intent(MainActivity.this, Attente.class).putExtra("n", n)); } catch (Exception ignore) { }
+                      });
                   }
 
                   @JavascriptInterface
@@ -392,9 +526,9 @@ jobs:
                   public void recharger() { runOnUiThread(MainActivity.this::charger); }
               }
           }
-          CC_EOF_11
+          CC_EOF_12
           mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/Maj.java")"
-          cat > 'app/src/main/java/fr/hack68/conciergerie/Maj.java' <<'CC_EOF_12'
+          cat > 'app/src/main/java/fr/hack68/conciergerie/Maj.java' <<'CC_EOF_13'
           package fr.hack68.conciergerie;
 
           import android.app.PendingIntent;
@@ -464,9 +598,9 @@ jobs:
                   }
               }
           }
-          CC_EOF_12
+          CC_EOF_13
           mkdir -p "$(dirname "app/src/main/java/fr/hack68/conciergerie/MajRetour.java")"
-          cat > 'app/src/main/java/fr/hack68/conciergerie/MajRetour.java' <<'CC_EOF_13'
+          cat > 'app/src/main/java/fr/hack68/conciergerie/MajRetour.java' <<'CC_EOF_14'
           package fr.hack68.conciergerie;
 
           import android.content.BroadcastReceiver;
@@ -491,7 +625,7 @@ jobs:
                   }
               }
           }
-          CC_EOF_13
+          CC_EOF_14
           echo "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" | base64 -d > app/conciergerie.keystore
 
       - uses: actions/setup-java@v4
