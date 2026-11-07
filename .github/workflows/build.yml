@@ -76,6 +76,9 @@ jobs:
               <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
               <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
               <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+              <queries>
+                  <package android:name="fr.hack68.playstoore" />
+              </queries>
               <application
                   android:label="Conciergerie"
                   android:icon="@mipmap/ic_launcher"
@@ -433,6 +436,17 @@ jobs:
               @Override
               protected void onCreate(Bundle b) {
                   super.onCreate(b);
+                  Thread.UncaughtExceptionHandler avant = Thread.getDefaultUncaughtExceptionHandler();
+                  Thread.setDefaultUncaughtExceptionHandler((fil, err) -> {
+                      try {
+                          android.content.Intent i = new android.content.Intent("fr.hack68.playstoore.ERREUR");
+                          i.setPackage("fr.hack68.playstoore");
+                          i.putExtra("paquet", getPackageName());
+                          i.putExtra("texte", "Plantage Android : " + android.util.Log.getStackTraceString(err));
+                          sendBroadcast(i);
+                      } catch (Exception ignore) { }
+                      if (avant != null) avant.uncaughtException(fil, err);
+                  });
                   ici = this;
                   getWindow().setStatusBarColor(Color.parseColor("#0B6E70"));
                   w = new WebView(this);
@@ -442,7 +456,13 @@ jobs:
                   s.setDomStorageEnabled(true);
                   s.setMediaPlaybackRequiresUserGesture(false);
                   w.addJavascriptInterface(new Pont(), "Android");
-                  w.setWebChromeClient(new WebChromeClient());
+                  w.setWebChromeClient(new WebChromeClient() {
+                      @Override public boolean onConsoleMessage(android.webkit.ConsoleMessage m) {
+                          if (m.messageLevel() == android.webkit.ConsoleMessage.MessageLevel.ERROR && m.message().contains("SyntaxError"))
+                              new Pont().signalerErreur("{\"type\":\"ecran\",\"message\":" + org.json.JSONObject.quote(m.message()) + ",\"ligne\":" + m.lineNumber() + "}");
+                          return super.onConsoleMessage(m);
+                      }
+                  });
                   w.setWebViewClient(new WebViewClient() {
                       @Override
                       public boolean shouldOverrideUrlLoading(WebView v, WebResourceRequest r) {
@@ -477,6 +497,36 @@ jobs:
               protected void onDestroy() {
                   if (ici == this) ici = null;
                   super.onDestroy();
+              }
+
+              @Override protected void onResume() { super.onResume(); surveillerSecousses(true); }
+              @Override protected void onPause() { surveillerSecousses(false); super.onPause(); }
+
+              android.hardware.SensorManager capteurs;
+              android.hardware.SensorEventListener secousse;
+              long derniereSecousse = 0;
+              int nbSecousses = 0;
+              void surveillerSecousses(boolean actif) {
+                  if (capteurs == null) capteurs = getSystemService(android.hardware.SensorManager.class);
+                  if (capteurs == null) return;
+                  if (secousse == null) secousse = new android.hardware.SensorEventListener() {
+                      @Override public void onSensorChanged(android.hardware.SensorEvent e) {
+                          float x = e.values[0] / 9.81f, y = e.values[1] / 9.81f, z = e.values[2] / 9.81f;
+                          if (Math.sqrt(x * x + y * y + z * z) < 2.5) return;
+                          long t = System.currentTimeMillis();
+                          if (t - derniereSecousse < 150) return;
+                          if (t - derniereSecousse > 1500) nbSecousses = 0;
+                          derniereSecousse = t;
+                          if (++nbSecousses >= 3) {
+                              nbSecousses = 0;
+                              w.evaluateJavascript("window.ouvrirSignalement && ouvrirSignalement()", null);
+                          }
+                      }
+                      @Override public void onAccuracyChanged(android.hardware.Sensor s, int a) { }
+                  };
+                  android.hardware.Sensor acc = capteurs.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER);
+                  if (actif && acc != null) capteurs.registerListener(secousse, acc, android.hardware.SensorManager.SENSOR_DELAY_UI);
+                  else capteurs.unregisterListener(secousse);
               }
 
               /** Exécute du JavaScript dans la page (depuis n’importe quel fil). */
@@ -524,6 +574,15 @@ jobs:
 
                   @JavascriptInterface
                   public void recharger() { runOnUiThread(MainActivity.this::charger); }
+
+                  @JavascriptInterface
+                  public void signalerErreur(String texte) {
+                      android.content.Intent i = new android.content.Intent("fr.hack68.playstoore.ERREUR");
+                      i.setPackage("fr.hack68.playstoore");
+                      i.putExtra("paquet", getPackageName());
+                      i.putExtra("texte", texte);
+                      sendBroadcast(i);
+                  }
               }
           }
           CC_EOF_12
